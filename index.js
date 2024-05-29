@@ -47,7 +47,14 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    const roomsCollection = client.db('stayVista').collection('rooms')
+
+    const roomsCollection = client.db('stayVista').collection('rooms');
+    const usersCollection = client.db('stayVista').collection('users')
+
+
+
+
+
     // auth related api
     app.post('/jwt', async (req, res) => {
       const user = req.body
@@ -76,7 +83,50 @@ async function run() {
       } catch (err) {
         res.status(500).send(err)
       }
+    });
+
+
+    //save user data in db
+    app.put('/user', async(req, res)=>{
+      const user = req.body;
+      const query = {email: user?.email};
+      //check if user already exists in db
+      const isExist = await usersCollection.findOne(query);
+
+      if(isExist){
+        if(user.status === 'Requested'){
+           //if existing user try to change his role
+          const result = await usersCollection.updateOne(query, {$set: {status: user?.status}, 
+          })
+          return res.send(result)
+        }else{
+          //if existing user login again
+          return res.send(isExist)
+        }
+      }
+
+      // save user for the first time
+      const options = {upsert: true};
+      const updateDoc = {
+        $set: {
+          ...user,
+          timestamp: Date.now(),
+        },
+      }
+
+      const result = await usersCollection.updateOne(query, updateDoc, options);
+      res.send(result)
+    });
+
+    // get all users data from db
+    app.get('/users', async(req, res)=>{
+      const result = await usersCollection.find().toArray();
+      res.send(result)
     })
+
+
+
+
 
     // Get all rooms from db
     app.get('/rooms', async (req, res) => {
@@ -86,7 +136,34 @@ async function run() {
       if (category && category !== 'null') query = { category }
       const result = await roomsCollection.find(query).toArray()
       res.send(result)
+    });
+
+
+    //Save a room date in db
+    app.post('/room', async (req, res) => {
+      const roomData = req.body
+      const result = await roomsCollection.insertOne(roomData)
+      res.send(result)
+    });
+
+
+    //get all rooms for host
+    app.get('/my-listings/:email', async(req, res)=>{
+      const email = req.params.email;
+      let query = {'host.email': email}
+      const result = await roomsCollection.find(query).toArray();
+      res.send(result);
+    });
+
+
+    //delete a room
+    app.delete('/room/:id', async(req, res)=>{
+      const id = req.params.id;
+      const query = {_id: new ObjectId(id)}
+      const result = await roomsCollection.deleteOne(query)
+      res.send(result)
     })
+
 
     // Get a single room data from db using _id
     app.get('/room/:id', async (req, res) => {
@@ -94,7 +171,19 @@ async function run() {
       const query = { _id: new ObjectId(id) }
       const result = await roomsCollection.findOne(query)
       res.send(result)
-    })
+    });
+
+
+    
+
+
+
+
+
+
+
+
+
 
     // Send a ping to confirm a successful connection
     await client.db('admin').command({ ping: 1 })
